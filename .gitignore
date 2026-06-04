@@ -1,0 +1,24 @@
+# Secrets — NEVER commit
+.env
+
+# Data
+data/
+
+# Runtime — platform-specific
+venv/
+logs/
+__pycache__/
+*.pyc
+
+# Setup secrets
+setup/server_data/
+
+# Downloaded media
+src/*.ogg
+src/*.m4a
+src/*.mp4
+src/*.mp3
+*.ogg
+*.m4a
+*.mp4
+*.mp3
