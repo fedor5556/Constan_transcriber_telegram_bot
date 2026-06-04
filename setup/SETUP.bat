@@ -30,8 +30,7 @@ echo Installing to %INSTALL_DIR%...
 if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
 
 echo Cloning repository...
-:: NOTE: Replace the URL below with your actual GitHub repository URL once created!
-git clone https://github.com/your-username/your-repo-name.git "%INSTALL_DIR%"
+git clone https://github.com/fedor5556/Constan_transcriber_telegram_bot.git "%INSTALL_DIR%"
 
 echo Copying secrets...
 copy /Y "%~dp0server_data\.env" "%INSTALL_DIR%\.env"
