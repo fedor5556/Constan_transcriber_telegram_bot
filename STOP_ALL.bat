@@ -3,6 +3,12 @@ cd /d "%~dp0"
 
 echo Stopping ONLY this project's processes...
 
+REM Tell the central runner this stop is intentional (it would otherwise
+REM auto-restart the process). Written BEFORE killing.
+if not exist logs mkdir logs
+if exist logs\runner.start del logs\runner.start
+echo stop > logs\runner.stop
+
 REM Only kill python processes whose command line points INSIDE this project
 REM folder. A generic script name like "main.py" must never match an unrelated
 REM app elsewhere on the machine. Also never touch the admin bot.
