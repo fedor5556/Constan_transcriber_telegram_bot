@@ -1,5 +1,6 @@
 import os
 import sys
+from datetime import datetime
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from dotenv import load_dotenv
@@ -25,6 +26,11 @@ except Exception as e:
 # Format: { message_id: {"file_id": str, "file_type": str} }
 pending_media = {}
 
+
+def log(msg):
+    """Activity log line - goes to console AND logs/main.log via log_tee."""
+    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
+
 @bot.message_handler(content_types=['voice', 'video_note', 'video'])
 def handle_media(message):
     try:
@@ -45,7 +51,8 @@ def handle_media(message):
         markup.add(btn_plain, btn_summary)
         
         reply = bot.reply_to(message, "How would you like this processed?", reply_markup=markup)
-        
+        log(f"Received {file_type} (chat {message.chat.id}) - awaiting choice")
+
         # Store the file_id referenced by the reply message_id
         pending_media[reply.message_id] = {
             "file_id": file_id,
@@ -127,25 +134,31 @@ def handle_callback(call):
 
     bot.answer_callback_query(call.id)
     bot.edit_message_text("Processing... ⏳", chat_id=call.message.chat.id, message_id=message_id)
-    
+    log(f"Processing {file_type} as '{action}' (chat {call.message.chat.id})")
+
     file_path = None
     try:
         # Download
         file_path = download_file(file_id, file_type)
-        
+        log(f"Downloaded {file_type} ({os.path.getsize(file_path)} bytes)")
+
         # Transcribe
         transcript = transcribe_audio(file_path)
         if not transcript:
+            log("Transcription FAILED")
             bot.edit_message_text("Failed to transcribe the media.", chat_id=call.message.chat.id, message_id=message_id)
             return
+        log(f"Transcribed OK ({len(transcript)} chars)")
 
         if action == "plain":
             # Send plain text
             bot.edit_message_text(f"📝 **Transcription:**\n\n{transcript}", chat_id=call.message.chat.id, message_id=message_id, parse_mode="Markdown")
+            log("Sent plain transcription")
         elif action == "summary":
             # Summarize
             summary = summarize_text(transcript)
             if not summary:
+                log("Summarization FAILED - sent transcription only")
                 bot.edit_message_text("Transcription successful, but summarization failed.", chat_id=call.message.chat.id, message_id=message_id)
                 bot.send_message(call.message.chat.id, f"📝 **Transcription:**\n\n{transcript}", parse_mode="Markdown")
                 return
@@ -155,7 +168,8 @@ def handle_callback(call):
                 response = response[:4000] + "..."
             
             bot.edit_message_text(response, chat_id=call.message.chat.id, message_id=message_id, parse_mode="Markdown")
-            
+            log("Sent summary + transcription")
+
     except Exception as e:
         print(f"Error processing callback: {e}")
         bot.edit_message_text("An error occurred during processing.", chat_id=call.message.chat.id, message_id=message_id)

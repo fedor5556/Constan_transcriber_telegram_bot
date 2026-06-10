@@ -18,9 +18,11 @@ if exist logs\runner.stop del logs\runner.stop
 
 echo Starting Application...
 start "Voice Transcription Bot" cmd /k RUN_APP.bat
-exit /b 0
+:: plain "exit" (not /b): the Hub starts this bat via `start`, which keeps the
+:: console open after the script ends - exit closes the window too.
+exit 0
 
 :runner
 echo [INFO] Central runner detected - requesting hidden (re)start.
 echo start > logs\runner.start
-exit /b 0
+exit 0
