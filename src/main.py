@@ -168,5 +168,7 @@ def handle_callback(call):
                 print(f"Failed to delete temp file {file_path}: {e}")
 
 if __name__ == "__main__":
+    import log_tee
+    log_tee.setup("main")
     print("Starting Main App...")
     bot.infinity_polling()
