@@ -22,6 +22,41 @@ except Exception as e:
     print(f"Failed to initialize Groq client (did you set GROQ_API_KEY?): {e}")
     sys.exit(1)
 
+# --- Access control (fail-closed allowlist) ---------------------------------
+# ALLOWED_USERS in .env: comma-separated @usernames and/or numeric Telegram user
+# IDs, e.g.  ALLOWED_USERS=@fetchvet,@friend,123456789
+# Usernames match case-insensitively (leading @ optional). Numeric IDs are the
+# stronger check (usernames can be released and re-claimed by someone else), so
+# include your ID too if you know it. Missing/empty => the bot refuses EVERYONE
+# (fail closed), so a lost .env can never silently turn the bot public and burn
+# the Groq API quota.
+
+def _parse_allowed(raw):
+    names, ids = set(), set()
+    for entry in (raw or "").split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        if entry.lstrip("-").isdigit():
+            ids.add(int(entry))
+        else:
+            names.add(entry.lstrip("@").lower())
+    return names, ids
+
+ALLOWED_NAMES, ALLOWED_IDS = _parse_allowed(os.getenv("ALLOWED_USERS"))
+if not ALLOWED_NAMES and not ALLOWED_IDS:
+    print("WARNING: ALLOWED_USERS is not set in .env - the bot will refuse all users "
+          "until it is configured (fail-closed).")
+
+def is_allowed(user):
+    """True if the Telegram user is on the allowlist. Fails closed."""
+    if user is None:
+        return False
+    if user.id in ALLOWED_IDS:
+        return True
+    username = (user.username or "").lower()
+    return bool(username) and username in ALLOWED_NAMES
+
 # Temporary storage for file IDs (In memory for simplicity, could be a DB for production)
 # Format: { message_id: {"file_id": str, "file_type": str} }
 pending_media = {}
@@ -33,6 +68,12 @@ def log(msg):
 
 @bot.message_handler(content_types=['voice', 'video_note', 'video'])
 def handle_media(message):
+    if not is_allowed(message.from_user):
+        uid = getattr(message.from_user, "id", "?")
+        uname = getattr(message.from_user, "username", None)
+        log(f"Denied media from unauthorized user id={uid} username={uname}")
+        bot.reply_to(message, "⛔ This bot is private. You are not on the allowed users list.")
+        return
     try:
         # Determine the file ID and type
         if message.content_type == 'voice':
@@ -120,6 +161,12 @@ def summarize_text(transcript):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('plain_') or call.data.startswith('summary_'))
 def handle_callback(call):
+    # Gate the callback too: this is where the Groq spend actually happens, and
+    # in a group chat someone else could press the button on another's message.
+    if not is_allowed(call.from_user):
+        log(f"Denied callback from unauthorized user id={getattr(call.from_user, 'id', '?')}")
+        bot.answer_callback_query(call.id, "Not authorized.")
+        return
     action, original_msg_id_str = call.data.split('_', 1)
     message_id = call.message.message_id
     
