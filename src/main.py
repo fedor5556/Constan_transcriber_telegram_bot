@@ -1,5 +1,14 @@
 import os
 import sys
+
+# Initialize logging FIRST -- before the env checks, client init, and handler
+# definitions below -- so ANY startup failure is written to logs/main.log instead
+# of vanishing as a bare "exited unexpectedly" with no trace (the whole reason
+# startup crashes were previously invisible). log_tee tees stdout+stderr and is
+# fail-safe: it degrades to console-only if the log file can't be opened.
+import log_tee
+log_tee.setup("main")
+
 import threading
 from datetime import datetime
 import telebot
@@ -363,7 +372,16 @@ def handle_callback(call):
                     print(f"Failed to delete temp file {file_path}: {e}")
 
 if __name__ == "__main__":
-    import log_tee
-    log_tee.setup("main")
-    print("Starting Main App...")
-    bot.infinity_polling()
+    # Logging is already initialized at the top of the module (see `import log_tee`
+    # there), so failures during import/startup are captured too -- not only here.
+    print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] Starting Main App...")
+    try:
+        bot.infinity_polling()
+        # infinity_polling normally loops forever; a clean return means the poller
+        # stopped (e.g. another instance took over) and the process is about to exit.
+        print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] WARNING: infinity_polling returned; process exiting.")
+    except Exception:
+        import traceback
+        print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] FATAL: infinity_polling raised:")
+        traceback.print_exc()   # -> teed into logs/main.log now
+        raise
