@@ -2,6 +2,16 @@
 cd /d "%~dp0"
 set "PYTHON_CMD=%~dp0venv\Scripts\python.exe"
 
+if not exist venv\Scripts\python.exe (
+    echo [INFO] venv missing - creating it...
+    python -m venv venv || py -m venv venv
+)
+:: Install deps BEFORE the runner handoff: on a fresh clone the Hub's pip step
+:: runs before the venv exists ([No venv found]) and the runner starts the
+:: script directly - without this line a first deploy crash-loops on missing
+:: modules (bit Transcriber_userbot on 2026-07-09).
+"%PYTHON_CMD%" -m pip install -r requirements.txt || (echo [FATAL] pip failed & exit /b 1)
+
 if not exist logs mkdir logs
 if exist logs\runner.stop del logs\runner.stop
 
