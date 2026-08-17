@@ -32,6 +32,22 @@ except Exception as e:
     print(f"Failed to initialize Groq client (did you set GROQ_API_KEY?): {e}")
     sys.exit(1)
 
+# --- Groq models -------------------------------------------------------------
+# Groq retires models on a schedule and the retired id then 404s, which degrades
+# the bot to "summarization failed" (transcription keeps working, so it is easy to
+# miss). llama-3.3-70b-versatile was decommissioned 2026-08-16 and replaced with
+# gpt-oss-120b, Groq's own recommended successor. Before blaming the code for a
+# summary failure, check the id against https://console.groq.com/docs/models .
+TRANSCRIBE_MODEL = "whisper-large-v3"
+SUMMARY_MODEL = "openai/gpt-oss-120b"
+# gpt-oss is a reasoning model. On Groq its chain-of-thought comes back in a
+# separate .reasoning field, never in .content, so nothing leaks into the user's
+# summary -- that is why this model and not qwen3.6-27b, which dumps a raw
+# <think> block straight into .content. Reasoning tokens still count against
+# max_completion_tokens, so keep the effort low: it costs ~10 thinking tokens
+# instead of ~300 and the summaries came out no worse (slightly better, in fact).
+SUMMARY_REASONING_EFFORT = "low"
+
 # --- Access control (fail-closed allowlist) ---------------------------------
 # ALLOWED_USERS in .env: comma-separated @usernames and/or numeric Telegram user
 # IDs, e.g.  ALLOWED_USERS=@fetchvet,@friend,123456789
@@ -248,7 +264,7 @@ def transcribe_audio(file_path):
         with open(file_path, "rb") as file:
             transcription = groq_client.audio.transcriptions.create(
                 file=(file_path, file.read()),
-                model="whisper-large-v3",
+                model=TRANSCRIBE_MODEL,
                 temperature=0,
                 response_format="verbose_json",
             )
@@ -260,7 +276,8 @@ def transcribe_audio(file_path):
 def summarize_text(transcript):
     try:
         completion = groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model=SUMMARY_MODEL,
+            reasoning_effort=SUMMARY_REASONING_EFFORT,
             messages=[
                 {
                     "role": "system",
@@ -279,7 +296,9 @@ def summarize_text(transcript):
         )
         return completion.choices[0].message.content
     except Exception as e:
-        print(f"Summarization error: {e}")
+        # Name the model in the log: a 404/model_not_found here means Groq retired
+        # it and SUMMARY_MODEL needs updating, not that the code broke.
+        print(f"Summarization error (model={SUMMARY_MODEL}): {e}")
         return None
 
 @bot.callback_query_handler(func=lambda call: call.data in ("plain", "summary"))
